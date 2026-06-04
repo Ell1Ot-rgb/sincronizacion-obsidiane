@@ -1,0 +1,81 @@
+# Dockerfile.lightrag
+# Para construir imagen Docker de LightRAG optimizada
+
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# ============================================================
+# DEPENDENCIAS DEL SISTEMA
+# ============================================================
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================================
+# INSTALAR LIGHTRAG DESDE GITHUB
+# ============================================================
+RUN pip install --no-cache-dir \
+    git+https://github.com/HKUDS/LightRAG.git@main
+
+# ============================================================
+# INSTALAR DEPENDENCIAS OPTIMIZADAS
+# ============================================================
+RUN pip install --no-cache-dir \
+    sentence-transformers==2.2.2 \
+    neo4j==5.12.0 \
+    networkx==3.1 \
+    fastapi==0.104.0 \
+    uvicorn==0.24.0 \
+    pydantic==2.4.2 \
+    pyyaml==6.0 \
+    loguru==0.7.2
+
+# ============================================================
+# CREAR ESTRUCTURA DE DIRECTORIOS
+# ============================================================
+RUN mkdir -p /app/data /app/cache /app/logs
+
+# ============================================================
+# CREAR SCRIPT DE INICIALIZACIÓN
+# ============================================================
+RUN cat > /app/entrypoint.sh << 'EOF'
+#!/bin/bash
+
+# Esperar a Neo4j
+echo "[LightRAG] Esperando Neo4j..."
+while ! curl -s "bolt://neo4j:7687" > /dev/null 2>&1; do
+    sleep 2
+done
+echo "[LightRAG] ✓ Neo4j disponible"
+
+# Iniciar LightRAG
+echo "[LightRAG] Iniciando aplicación..."
+exec uvicorn lightrag.server:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --workers 4 \
+    --loop uvloop
+EOF
+
+RUN chmod +x /app/entrypoint.sh
+
+# ============================================================
+# HEALTHCHECK
+# ============================================================
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# ============================================================
+# PUERTOS Y VOLUMENES
+# ============================================================
+EXPOSE 8000
+
+VOLUME ["/app/data", "/app/cache", "/app/logs"]
+
+# ============================================================
+# INICIALIZAR
+# ============================================================
+CMD ["/app/entrypoint.sh"]

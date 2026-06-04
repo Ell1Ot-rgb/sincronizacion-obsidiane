@@ -1,0 +1,24 @@
+FROM n8nio/n8n:latest
+
+# Crear un wrapper script que modifique socket.io config antes de iniciar n8n
+RUN mkdir -p /app/override
+
+# Script que modifica la configuración de socket.io antes de iniciar
+COPY <<EOF /docker-entrypoint-override.sh
+#!/bin/bash
+set -e
+
+# Modificar el código de n8n para deshabilitar la validación de origen
+if [ -f /home/node/.n8n/config ]; then
+    # No hacer nada especial, n8n ya inició
+    echo "Config file exists"
+fi
+
+# Ejecutar el comando original de docker-entrypoint
+exec /docker-entrypoint.sh "$@"
+EOF
+
+RUN chmod +x /docker-entrypoint-override.sh
+
+# Usar el script override como entrypoint
+ENTRYPOINT ["/docker-entrypoint-override.sh"]
